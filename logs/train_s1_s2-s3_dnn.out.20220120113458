@@ -44,3 +44,16 @@ DNN(
 Epoch 0 starts !
 --------------------------------------------------------------------------------
 Epoch 1 starts !
+--------------------------------------------------------------------------------
+Epoch 2 starts !
+--------------------------------------------------------------------------------
+Epoch 3 starts !
+--------------------------------------------------------------------------------
+Epoch 4 starts !
+/home/luyuan.lq/.conda/envs/xmrec/lib/python3.7/site-packages/torch/cuda/__init__.py:52: UserWarning: CUDA initialization: The NVIDIA driver on your system is too old (found version 9000). Please update your GPU driver by downloading and installing a new version from the URL: http://www.nvidia.com/Download/index.aspx Alternatively, go to: https://pytorch.org to install a PyTorch version that has been compiled with your version of the CUDA driver. (Triggered internally at  ../c10/cuda/CUDAFunctions.cpp:115.)
+  return torch._C._cuda_getDeviceCount() > 0
+--------------------------------------------------------------------------------
+Model is trained! and saved at:
+--model: checkpoints/s1_s2-s3_toytest_dnn.model
+--id_bank: checkpoints/s1_s2-s3_toytest_dnn.pickle
+Experiment finished successfully!
