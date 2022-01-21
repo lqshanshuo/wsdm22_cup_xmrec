@@ -1,0 +1,45 @@
+/home/luyuan.lq/.conda/envs/xmrec/lib/python3.7/site-packages/torch/cuda/__init__.py:52: UserWarning: CUDA initialization: The NVIDIA driver on your system is too old (found version 9000). Please update your GPU driver by downloading and installing a new version from the URL: http://www.nvidia.com/Download/index.aspx Alternatively, go to: https://pytorch.org to install a PyTorch version that has been compiled with your version of the CUDA driver. (Triggered internally at  ../c10/cuda/CUDAFunctions.cpp:115.)
+  return torch._C._cuda_getDeviceCount() > 0
+Device: cpu
+{'alias': 'dnn', 'batch_size': 5000, 'optimizer': 'adam', 'adam_lr': 0.005, 'latent_dim': 8, 'num_negative': 19, 'l2_regularization': 1e-07, 'use_cuda': False, 'device_id': 0, 'embedding_user': None, 'embedding_item': None, 'save_trained': True, 'num_users': 16904, 'num_items': 11256, 'num_tasks': 3, 'num_shared_experts': 3, 'hidden_units': [32, 16, 8]}
+Model is DNN!
+DNN(
+  (loss_func): CrossEntropyLoss()
+  (embedding_user): Embedding(16904, 8)
+  (embedding_item): Embedding(11256, 8)
+  (umlp1): Sequential(
+    (u_fc1): Linear(in_features=8, out_features=32, bias=True)
+    (u_bn1): BatchNorm1d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (u_relu1): ReLU()
+  )
+  (umlp2): Sequential(
+    (u_fc2): Linear(in_features=32, out_features=16, bias=True)
+    (u_bn2): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (u_relu2): ReLU()
+  )
+  (umlp3): Sequential(
+    (u_fc3): Linear(in_features=16, out_features=8, bias=True)
+    (u_relu3): ReLU()
+  )
+  (imlp1): Sequential(
+    (i_fc1): Linear(in_features=8, out_features=32, bias=True)
+    (i_bn1): BatchNorm1d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (i_relu1): ReLU()
+  )
+  (imlp2): Sequential(
+    (i_fc2): Linear(in_features=32, out_features=16, bias=True)
+    (i_bn2): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (i_relu2): ReLU()
+  )
+  (imlp3): Sequential(
+    (i_fc3): Linear(in_features=16, out_features=8, bias=True)
+    (i_relu3): ReLU()
+  )
+  (softmax): Softmax(dim=1)
+)
+Pretrained weights from checkpoints/s1_s2-s3_toytest_dnn.model are loaded!
+Loaded target data!
+
+Validation output:
+{'P_5': 0.02783792143519951, 'P_10': 0.02044540674296319, 'P_20': 0.015187132694092175, 'recall_5': 0.13918960717599752, 'recall_10': 0.20445406742963193, 'recall_20': 0.3037426538818435, 'ndcg_cut_10': 0.11685510086593674, 'map_cut_10': 0.0902432872313788}
+Validation finished successfully!

@@ -219,27 +219,44 @@ class DNNBase(nn.Module):
         else:
             self.embedding_item = config['embedding_item']
 
+    def get_mlp(self, level, prefix, fc_only=False, use_adi_cat=False):
+        if level == 1:
+            if fc_only:
+                return nn.Sequential(OrderedDict([
+                                (f'{prefix}_fc1', nn.Linear(in_features=self.latent_dim, out_features=self.config['hidden_units'][0])),
+                               ]))
+            else:
+                return nn.Sequential(OrderedDict([
+                            (f'{prefix}_fc1', nn.Linear(in_features=self.latent_dim, out_features=self.config['hidden_units'][0])),
+                            (f'{prefix}_bn1', nn.BatchNorm1d(self.config['hidden_units'][0])),
+                            (f'{prefix}_relu1', nn.ReLU()),
+                           ]))
+        if level == 2:
+            if fc_only:
+                return nn.Sequential(OrderedDict([
+                                (f'{prefix}_fc2', nn.Linear(in_features=self.config['hidden_units'][0], out_features=self.config['hidden_units'][1])),
+                               ]))
+            else:
+                return nn.Sequential(OrderedDict([
+                            (f'{prefix}_fc2', nn.Linear(in_features=self.config['hidden_units'][0], out_features=self.config['hidden_units'][1])),
+                            (f'{prefix}_bn2', nn.BatchNorm1d(self.config['hidden_units'][1])),
+                            (f'{prefix}_relu2', nn.ReLU()),
+                           ]))
+        if level == 3:
+            adi_factor = 3 if use_adi_cat else 1
+            if fc_only:
+                return nn.Sequential(OrderedDict([
+                                (f'{prefix}_fc3', nn.Linear(in_features=self.config['hidden_units'][1]*adi_factor, out_features=self.config['hidden_units'][2])),
+                               ]))
+            else:
+                return nn.Sequential(OrderedDict([
+                            (f'{prefix}_fc3', nn.Linear(in_features=self.config['hidden_units'][1]*adi_factor, out_features=self.config['hidden_units'][2])),
+                            (f'{prefix}_relu3', nn.ReLU()),
+                           ]))
+
     def get_loss(self, ratings_pred, train_targets):
         return self.loss_func(ratings_pred.view(-1, self.num_class), torch.zeros(int(ratings_pred.shape[0]/self.num_class), dtype=torch.long))
 
-    def get_mlp(self, level, prefix):
-        if level == 1:
-            return nn.Sequential(OrderedDict([
-                        (f'{prefix}_fc1', nn.Linear(in_features=self.latent_dim, out_features=self.config['hidden_units'][0])),
-                        (f'{prefix}_bn1', nn.BatchNorm1d(self.config['hidden_units'][0])),
-                        (f'{prefix}_relu1', nn.ReLU()),
-                       ]))
-        if level == 2:
-            return nn.Sequential(OrderedDict([
-                        (f'{prefix}_fc2', nn.Linear(in_features=self.config['hidden_units'][0], out_features=self.config['hidden_units'][1])),
-                        (f'{prefix}_bn2', nn.BatchNorm1d(self.config['hidden_units'][1])),
-                        (f'{prefix}_relu2', nn.ReLU()),
-                       ]))
-        if level == 3:
-            return nn.Sequential(OrderedDict([
-                        (f'{prefix}_fc3', nn.Linear(in_features=self.config['hidden_units'][1], out_features=self.config['hidden_units'][2])),
-                        (f'{prefix}_relu3', nn.ReLU()),
-                       ]))
 
     def forward(self, user_indices, item_indices, domain_idc):
         pass
@@ -353,7 +370,6 @@ class CrossStitch(DNNBase):
         i_arr = [layer(i[:, :, idx]) for (idx, layer) in enumerate(self.imlp3)]
 
         logits = torch.sum(torch.mul(u_arr[domain_idc], i_arr[domain_idc]), dim=1)
-        logits = torch.sum(torch.mul(u, i), dim=1)
         if self.training:
             logits = logits.view(-1, self.num_class)
             return self.softmax(logits).view(-1, 1)
@@ -579,39 +595,41 @@ class ADI(DNNBase):
     def __init__(self, config):
         super(ADI, self).__init__(config)
 
-        self.u_expert_kernel_1 = nn.Parameter(torch.randn(self.latent_dim, hidden_units[0], config['num_shared_experts']), requires_grad=True)
-        self.u_expert_bias_1 = nn.Parameter(torch.randn(config['hidden_units'][0], config['num_shared_experts']), requires_grad=True)
-        param_init(self.u_expert_kernel_1, self.u_expert_bias_1)
+        self.umlps1 = nn.ModuleList([self.get_mlp(1, 'u', fc_only=True) for i in range(config['num_shared_experts'])])
+        self.udsbn1 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][0]) for i in range(config['num_tasks'])])
+        self.umlps2 = nn.ModuleList([self.get_mlp(2, 'u', fc_only=True) for i in range(config['num_shared_experts'])])
+        self.udsbn2 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][1]) for i in range(config['num_tasks'])])
+        self.umlp1 = nn.ModuleList([self.get_mlp(1, 'u', fc_only=True) for i in range(config['num_tasks'])])
+        self.umlp2 = nn.ModuleList([self.get_mlp(2, 'u', fc_only=True) for i in range(config['num_tasks'])])
+        self.ugate = nn.ModuleList([
+                         nn.Sequential(OrderedDict([
+                            ('u_gate', nn.Linear(in_features=self.latent_dim, out_features=self.config['num_shared_experts'])),
+                            ('u_gate_softmax', nn.Softmax(dim=1)),
+                         ]))
+                         for i in range(config['num_tasks'])
+                     ])
+        self.ugate_adi = nn.Linear(in_features=self.latent_dim, out_features=self.config['num_tasks'])
+        self.umlp3 = nn.ModuleList([self.get_mlp(3, 'u', use_adi_cat=True) for i in range(config['num_tasks'])])
 
-        self.u_expert_kernel_2 = nn.Parameter(torch.randn(config['hidden_units'][0], hidden_units[1], config['num_shared_experts']), requires_grad=True)
-        self.u_expert_bias_2 = nn.Parameter(torch.randn(config['hidden_units'][1], config['num_shared_experts']), requires_grad=True)
-        param_init(self.u_expert_kernel_2, self.u_expert_bias_2)
+        self.imlps1 = nn.ModuleList([self.get_mlp(1, 'i', fc_only=True) for i in range(config['num_shared_experts'])])
+        self.idsbn1 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][0]) for i in range(config['num_tasks'])])
+        self.imlps2 = nn.ModuleList([self.get_mlp(2, 'i', fc_only=True) for i in range(config['num_shared_experts'])])
+        self.idsbn2 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][1]) for i in range(config['num_tasks'])])
+        self.imlp1 = nn.ModuleList([self.get_mlp(1, 'i', fc_only=True) for i in range(config['num_tasks'])])
+        self.imlp2 = nn.ModuleList([self.get_mlp(2, 'i', fc_only=True) for i in range(config['num_tasks'])])
+        self.igate = nn.ModuleList([
+                         nn.Sequential(OrderedDict([
+                            ('i_gate', nn.Linear(in_features=self.latent_dim, out_features=self.config['num_shared_experts'])),
+                            ('i_gate_softmax', nn.Softmax(dim=1)),
+                         ]))
+                         for i in range(config['num_tasks'])
+                     ])
+        self.igate_adi = nn.Linear(in_features=self.latent_dim, out_features=self.config['num_tasks'])
+        self.imlp3 = nn.ModuleList([self.get_mlp(3, 'i', use_adi_cat=True) for i in range(config['num_tasks'])])
 
-        self.u_gate_kernels = nn.ParameterList([nn.Parameter(torch.randn(self.latent_dim, config['num_shared_experts']+config['num_tasks']), requires_grad=True) for i in range(config['num_tasks'])])
-        self.u_gate_bias = nn.ParameterList([nn.Parameter(torch.randn(config['num_shared_experts']+config['num_tasks']), requires_grad=True) for i in range(config['num_tasks'])])
-        [param_init(gate_kernel, gate_bias) for (gate_kernel, gate_bias) in zip(self.u_gate_kernels, self.u_gate_bias)]
+        self.domain_embs = nn.Embedding(config['num_tasks'], self.latent_dim)
 
-        self.ufc1 = nn.ModuleList([nn.Linear(in_features=self.latent_dim, out_features=config['hidden_units'][0]) for i in range(config['num_tasks'])])
-        self.ufc2 = nn.ModuleList([nn.Linear(in_features=config['hidden_units'][0], out_features=config['hidden_units'][1]) for i in range(config['num_tasks'])])
-        self.ufc3 = nn.ModuleList([nn.Linear(in_features=config['hidden_units'][1], out_features=config['hidden_units'][2]) for i in range(config['num_tasks'])])
-
-
-        self.i_expert_kernel_1 = nn.Parameter(torch.randn(self.latent_dim, hidden_units[0], config['num_shared_experts']), requires_grad=True)
-        self.i_expert_bias_1 = nn.Parameter(torch.randn(config['hidden_units'][0], config['num_shared_experts']), requires_grad=True)
-        param_init(self.i_expert_kernel_1, self.i_expert_bias_1)
-
-        self.i_expert_kernel_2 = nn.Parameter(torch.randn(config['hidden_units'][0], hidden_units[1], config['num_shared_experts']), requires_grad=True)
-        self.i_expert_bias_2 = nn.Parameter(torch.randn(config['hidden_units'][1], config['num_shared_experts']), requires_grad=True)
-        param_init(self.i_expert_kernel_2, self.i_expert_bias_2)
-
-        self.i_gate_kernels = nn.ParameterList([nn.Parameter(torch.randn(self.latent_dim, config['num_shared_experts']+config['num_tasks']), requires_grad=True) for i in range(config['num_tasks'])])
-        self.i_gate_bias = nn.ParameterList([nn.Parameter(torch.randn(config['num_shared_experts']+config['num_tasks']), requires_grad=True) for i in range(config['num_tasks'])])
-        [param_init(gate_kernel, gate_bias) for (gate_kernel, gate_bias) in zip(self.i_gate_kernels, self.i_gate_bias)]
-
-        self.ifc1 = nn.ModuleList([nn.Linear(in_features=self.latent_dim, out_features=config['hidden_units'][0]) for i in range(config['num_tasks'])])
-        self.ifc2 = nn.ModuleList([nn.Linear(in_features=config['hidden_units'][0], out_features=config['hidden_units'][1]) for i in range(config['num_tasks'])])
-        self.ifc3 = nn.ModuleList([nn.Linear(in_features=config['hidden_units'][1], out_features=config['hidden_units'][2]) for i in range(config['num_tasks'])])
-
+        self.relu = nn.ReLU()
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, user_indices, item_indices, domain_idc):
@@ -624,39 +642,33 @@ class ADI(DNNBase):
         else:
             item_embedding = self.embedding_item[item_indices]
 
-        u_gate_outputs = []
-        u_spec_outputs = []
-        u_final_outputs = []
-        u_expert_outputs = nn.functional.relu(torch.einsum("ab,bcd->acd", (user_embedding, self.u_expert_kernel_1)) + self.u_expert_bias_1)
-        u_expert_outputs = nn.functional.relu(torch.einsum("abd,bcd->acd", (u_expert_outputs, self.u_expert_kernel_2)) + self.u_expert_bias_2)
-        for index, _ in enumerate(self.u_gate_kernels):
-            u = nn.functional.relu(self.ufc1[index](user_embedding))
-            u = nn.functional.relu(self.ufc2[index](u))
-            u_spec_outputs.append(u)
-        u_expert_outputs = torch.cat([torch.stack(u_spec_outputs, -1), u_expert_outputs], -1)
-        for index, gate_kernel in enumerate(self.u_gate_kernels):
-            gate_output = torch.einsum("ab,bc->ac", (user_embedding, gate_kernel)) + self.u_gate_bias[index]
-            expanded_gate_output = torch.unsqueeze(gate_output, 1)
-            weighted_expert_output = u_expert_outputs * expanded_gate_output.expand_as(u_expert_outputs)
-            u_final_outputs.append(nn.functional.relu(self.ufc3[index](torch.sum(weighted_expert_output, 2))))
+        u_expert = self.umlp2[domain_idc](self.umlp1[domain_idc](user_embedding)) # [?*16]
+        u_shared_experts = [self.relu(self.udsbn1[domain_idc](layer(user_embedding))) for layer in self.umlps1]
+        u_experts = torch.stack([self.relu(self.udsbn2[domain_idc](layer(u_shared_experts[idx]))) for (idx, layer) in enumerate(self.umlps2)], dim=-1) # [?*16*3]
+        u_gate = torch.stack([layer(user_embedding) for layer in self.ugate], dim=-1) # [?*3*2]
+        weighted_u_expert = torch.einsum("abc,acd->abd", (u_experts, u_gate))[:,:,domain_idc] # [?*16]
+        u_gate_adi_1 = self.domain_embs(torch.LongTensor([domain_idc]*weighted_u_expert.shape[0])) # [?*2]
+        u_gate_adi = torch.sigmoid(self.ugate_adi(u_gate_adi_1)) # [?*2]
+        #pdb.set_trace()
+        u_adi_spec = weighted_u_expert*u_gate_adi[:,0:1].expand(-1, 16)
+        u_adi_share = u_expert*u_gate_adi[:,1:2].expand(-1, 16)
+        u_adi = torch.cat([u_adi_spec, u_adi_spec*u_adi_share, u_adi_share], 1) # [?*48]
+        u_adi = self.umlp3[domain_idc](u_adi)
 
-        i_gate_outputs = []
-        i_spec_outputs = []
-        i_final_outputs = []
-        i_expert_outputs = nn.functional.relu(torch.einsum("ab,bcd->acd", (item_embedding, self.i_expert_kernel_1)) + self.i_expert_bias_1)
-        i_expert_outputs = nn.functional.relu(torch.einsum("abd,bcd->acd", (i_expert_outputs, self.i_expert_kernel_2)) + self.i_expert_bias_2)
-        for index, _ in enumerate(self.i_gate_kernels):
-            i = nn.functional.relu(self.ifc1[index](item_embedding))
-            i = nn.functional.relu(self.ifc2[index](i))
-            i_spec_outputs.append(i)
-        i_expert_outputs = torch.cat([torch.stack(i_spec_outputs, -1), i_expert_outputs], -1)
-        for index, gate_kernel in enumerate(self.i_gate_kernels):
-            gate_output = torch.einsum("ab,bc->ac", (item_embedding, gate_kernel)) + self.i_gate_bias[index]
-            expanded_gate_output = torch.unsqueeze(gate_output, 1)
-            weighted_expert_output = i_expert_outputs * expanded_gate_output.expand_as(i_expert_outputs)
-            i_final_outputs.append(nn.functional.relu(self.ifc3[index](torch.sum(weighted_expert_output, 2))))
 
-        logits = torch.sum(torch.mul(u_final_outputs[0], i_final_outputs[0]), dim=1)
+        i_expert = self.imlp2[domain_idc](self.imlp1[domain_idc](user_embedding))
+        i_shared_experts = [self.relu(self.idsbn1[domain_idc](layer(item_embedding))) for layer in self.imlps1]
+        i_experts = torch.stack([self.relu(self.idsbn2[domain_idc](layer(i_shared_experts[idx]))) for (idx, layer) in enumerate(self.imlps2)], dim=-1) # [?*16*3]
+        i_gate = torch.stack([layer(item_embedding) for layer in self.igate], dim=-1) # [?*3*2]
+        weighted_i_expert = torch.einsum("abc,acd->abd", (i_experts, i_gate))[:,:,domain_idc] # [?*16]
+        i_gate_adi_1 = self.domain_embs(torch.LongTensor([domain_idc]*weighted_i_expert.shape[0])) # [?*2]
+        i_gate_adi = torch.sigmoid(self.igate_adi(i_gate_adi_1)) # [?*2]
+        i_adi_spec = weighted_i_expert*i_gate_adi[:,0:1].expand(-1, 16)
+        i_adi_share = i_expert*i_gate_adi[:,1:2].expand(-1, 16)
+        i_adi = torch.cat([i_adi_spec, i_adi_spec*i_adi_share, i_adi_share], 1) # [?*48]
+        i_adi = self.imlp3[domain_idc](i_adi)
+
+        logits = torch.sum(torch.mul(u_adi, i_adi), dim=1)
         if self.training:
             logits = logits.view(-1, self.num_class)
             return self.softmax(logits).view(-1, 1)
