@@ -1,16 +1,16 @@
 Running experiment on device: cpu
-Loading target market s3: DATA/s3/train_5core.tsv
+Loading target market s2: DATA/s2/train_5core.tsv
 Loaded target data!
 
 model_name is : adi
 Loading s1: DATA/s1/train_5core.tsv
-Loading s2: DATA/s2/train_5core.tsv
-{'alias': 'adi', 'batch_size': 2000, 'optimizer': 'adam', 'adam_lr': 0.005, 'latent_dim': 8, 'num_negative': 19, 'l2_regularization': 1e-07, 'use_cuda': False, 'device_id': 0, 'embedding_user': None, 'embedding_item': None, 'save_trained': True, 'num_users': 16904, 'num_items': 11011, 'num_tasks': 3, 'num_shared_experts': 3, 'hidden_units': [32, 16, 8]}
+Loading s3: DATA/s3/train_5core.tsv
+{'alias': 'adi', 'batch_size': 2000, 'optimizer': 'adam', 'adam_lr': 0.005, 'latent_dim': 8, 'num_negative': 19, 'l2_regularization': 1e-07, 'use_cuda': False, 'device_id': 0, 'embedding_user': None, 'embedding_item': None, 'save_trained': True, 'num_users': 16904, 'num_items': 11022, 'num_tasks': 3, 'num_shared_experts': 3, 'hidden_units': [32, 16, 8]}
 Model is ADI!
 ADI(
   (loss_func): CrossEntropyLoss()
   (embedding_user): Embedding(16904, 8)
-  (embedding_item): Embedding(11011, 8)
+  (embedding_item): Embedding(11022, 8)
   (umlps1): ModuleList(
     (0): Sequential(
       (u_fc1): Linear(in_features=8, out_features=32, bias=True)
@@ -46,23 +46,35 @@ ADI(
   (umlp1): ModuleList(
     (0): Sequential(
       (u_fc1): Linear(in_features=8, out_features=32, bias=True)
+      (u_bn1): BatchNorm1d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (u_relu1): ReLU()
     )
     (1): Sequential(
       (u_fc1): Linear(in_features=8, out_features=32, bias=True)
+      (u_bn1): BatchNorm1d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (u_relu1): ReLU()
     )
     (2): Sequential(
       (u_fc1): Linear(in_features=8, out_features=32, bias=True)
+      (u_bn1): BatchNorm1d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (u_relu1): ReLU()
     )
   )
   (umlp2): ModuleList(
     (0): Sequential(
       (u_fc2): Linear(in_features=32, out_features=16, bias=True)
+      (u_bn2): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (u_relu2): ReLU()
     )
     (1): Sequential(
       (u_fc2): Linear(in_features=32, out_features=16, bias=True)
+      (u_bn2): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (u_relu2): ReLU()
     )
     (2): Sequential(
       (u_fc2): Linear(in_features=32, out_features=16, bias=True)
+      (u_bn2): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (u_relu2): ReLU()
     )
   )
   (ugate): ModuleList(
@@ -82,16 +94,33 @@ ADI(
   (ugate_adi): Linear(in_features=8, out_features=3, bias=True)
   (umlp3): ModuleList(
     (0): Sequential(
-      (u_fc3): Linear(in_features=48, out_features=8, bias=True)
+      (u_fc3): Linear(in_features=48, out_features=48, bias=True)
+      (u_bn3): BatchNorm1d(48, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
       (u_relu3): ReLU()
     )
     (1): Sequential(
-      (u_fc3): Linear(in_features=48, out_features=8, bias=True)
+      (u_fc3): Linear(in_features=48, out_features=48, bias=True)
+      (u_bn3): BatchNorm1d(48, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
       (u_relu3): ReLU()
     )
     (2): Sequential(
-      (u_fc3): Linear(in_features=48, out_features=8, bias=True)
+      (u_fc3): Linear(in_features=48, out_features=48, bias=True)
+      (u_bn3): BatchNorm1d(48, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
       (u_relu3): ReLU()
+    )
+  )
+  (umlp4): ModuleList(
+    (0): Sequential(
+      (u_fc4): Linear(in_features=48, out_features=8, bias=True)
+      (u_relu4): ReLU()
+    )
+    (1): Sequential(
+      (u_fc4): Linear(in_features=48, out_features=8, bias=True)
+      (u_relu4): ReLU()
+    )
+    (2): Sequential(
+      (u_fc4): Linear(in_features=48, out_features=8, bias=True)
+      (u_relu4): ReLU()
     )
   )
   (imlps1): ModuleList(
@@ -129,23 +158,35 @@ ADI(
   (imlp1): ModuleList(
     (0): Sequential(
       (i_fc1): Linear(in_features=8, out_features=32, bias=True)
+      (i_bn1): BatchNorm1d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (i_relu1): ReLU()
     )
     (1): Sequential(
       (i_fc1): Linear(in_features=8, out_features=32, bias=True)
+      (i_bn1): BatchNorm1d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (i_relu1): ReLU()
     )
     (2): Sequential(
       (i_fc1): Linear(in_features=8, out_features=32, bias=True)
+      (i_bn1): BatchNorm1d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (i_relu1): ReLU()
     )
   )
   (imlp2): ModuleList(
     (0): Sequential(
       (i_fc2): Linear(in_features=32, out_features=16, bias=True)
+      (i_bn2): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (i_relu2): ReLU()
     )
     (1): Sequential(
       (i_fc2): Linear(in_features=32, out_features=16, bias=True)
+      (i_bn2): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (i_relu2): ReLU()
     )
     (2): Sequential(
       (i_fc2): Linear(in_features=32, out_features=16, bias=True)
+      (i_bn2): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (i_relu2): ReLU()
     )
   )
   (igate): ModuleList(
@@ -165,16 +206,33 @@ ADI(
   (igate_adi): Linear(in_features=8, out_features=3, bias=True)
   (imlp3): ModuleList(
     (0): Sequential(
-      (i_fc3): Linear(in_features=48, out_features=8, bias=True)
+      (i_fc3): Linear(in_features=48, out_features=48, bias=True)
+      (i_bn3): BatchNorm1d(48, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
       (i_relu3): ReLU()
     )
     (1): Sequential(
-      (i_fc3): Linear(in_features=48, out_features=8, bias=True)
+      (i_fc3): Linear(in_features=48, out_features=48, bias=True)
+      (i_bn3): BatchNorm1d(48, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
       (i_relu3): ReLU()
     )
     (2): Sequential(
-      (i_fc3): Linear(in_features=48, out_features=8, bias=True)
+      (i_fc3): Linear(in_features=48, out_features=48, bias=True)
+      (i_bn3): BatchNorm1d(48, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
       (i_relu3): ReLU()
+    )
+  )
+  (imlp4): ModuleList(
+    (0): Sequential(
+      (i_fc4): Linear(in_features=48, out_features=8, bias=True)
+      (i_relu4): ReLU()
+    )
+    (1): Sequential(
+      (i_fc4): Linear(in_features=48, out_features=8, bias=True)
+      (i_relu4): ReLU()
+    )
+    (2): Sequential(
+      (i_fc4): Linear(in_features=48, out_features=8, bias=True)
+      (i_relu4): ReLU()
     )
   )
   (domain_embs): Embedding(3, 8)
@@ -194,6 +252,6 @@ Epoch 4 starts !
   return torch._C._cuda_getDeviceCount() > 0
 --------------------------------------------------------------------------------
 Model is trained! and saved at:
---model: checkpoints/s3_s1-s2_toytest_adi.model
---id_bank: checkpoints/s3_s1-s2_toytest_adi.pickle
+--model: checkpoints/s2_s1-s3_toytest_adi.model
+--id_bank: checkpoints/s2_s1-s3_toytest_adi.pickle
 Experiment finished successfully!

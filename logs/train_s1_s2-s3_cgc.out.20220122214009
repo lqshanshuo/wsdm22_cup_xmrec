@@ -1,16 +1,16 @@
 Running experiment on device: cpu
-Loading target market s3: DATA/s3/train_5core.tsv
+Loading target market s1: DATA/s1/train_5core.tsv
 Loaded target data!
 
 model_name is : cgc
-Loading s1: DATA/s1/train_5core.tsv
 Loading s2: DATA/s2/train_5core.tsv
-{'alias': 'cgc', 'batch_size': 2000, 'optimizer': 'adam', 'adam_lr': 0.005, 'latent_dim': 8, 'num_negative': 19, 'l2_regularization': 1e-07, 'use_cuda': False, 'device_id': 0, 'embedding_user': None, 'embedding_item': None, 'save_trained': True, 'num_users': 16904, 'num_items': 11011, 'num_tasks': 3, 'num_shared_experts': 3, 'hidden_units': [32, 16, 8]}
+Loading s3: DATA/s3/train_5core.tsv
+{'alias': 'cgc', 'batch_size': 2000, 'optimizer': 'adam', 'adam_lr': 0.005, 'latent_dim': 8, 'num_negative': 19, 'l2_regularization': 1e-07, 'use_cuda': False, 'device_id': 0, 'embedding_user': None, 'embedding_item': None, 'save_trained': True, 'num_users': 16904, 'num_items': 11256, 'num_tasks': 3, 'num_shared_experts': 3, 'hidden_units': [32, 16, 8]}
 Model is CGC!
 CGC(
   (loss_func): CrossEntropyLoss()
   (embedding_user): Embedding(16904, 8)
-  (embedding_item): Embedding(11011, 8)
+  (embedding_item): Embedding(11256, 8)
   (umlps1): ModuleList(
     (0): Sequential(
       (u_fc1): Linear(in_features=8, out_features=32, bias=True)
@@ -95,16 +95,33 @@ CGC(
   )
   (umlp3): ModuleList(
     (0): Sequential(
-      (u_fc3): Linear(in_features=16, out_features=8, bias=True)
+      (u_fc3): Linear(in_features=16, out_features=16, bias=True)
+      (u_bn3): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
       (u_relu3): ReLU()
     )
     (1): Sequential(
-      (u_fc3): Linear(in_features=16, out_features=8, bias=True)
+      (u_fc3): Linear(in_features=16, out_features=16, bias=True)
+      (u_bn3): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
       (u_relu3): ReLU()
     )
     (2): Sequential(
-      (u_fc3): Linear(in_features=16, out_features=8, bias=True)
+      (u_fc3): Linear(in_features=16, out_features=16, bias=True)
+      (u_bn3): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
       (u_relu3): ReLU()
+    )
+  )
+  (umlp4): ModuleList(
+    (0): Sequential(
+      (u_fc4): Linear(in_features=16, out_features=8, bias=True)
+      (u_relu4): ReLU()
+    )
+    (1): Sequential(
+      (u_fc4): Linear(in_features=16, out_features=8, bias=True)
+      (u_relu4): ReLU()
+    )
+    (2): Sequential(
+      (u_fc4): Linear(in_features=16, out_features=8, bias=True)
+      (u_relu4): ReLU()
     )
   )
   (imlps1): ModuleList(
@@ -191,16 +208,33 @@ CGC(
   )
   (imlp3): ModuleList(
     (0): Sequential(
-      (i_fc3): Linear(in_features=16, out_features=8, bias=True)
+      (i_fc3): Linear(in_features=16, out_features=16, bias=True)
+      (i_bn3): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
       (i_relu3): ReLU()
     )
     (1): Sequential(
-      (i_fc3): Linear(in_features=16, out_features=8, bias=True)
+      (i_fc3): Linear(in_features=16, out_features=16, bias=True)
+      (i_bn3): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
       (i_relu3): ReLU()
     )
     (2): Sequential(
-      (i_fc3): Linear(in_features=16, out_features=8, bias=True)
+      (i_fc3): Linear(in_features=16, out_features=16, bias=True)
+      (i_bn3): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
       (i_relu3): ReLU()
+    )
+  )
+  (imlp4): ModuleList(
+    (0): Sequential(
+      (i_fc4): Linear(in_features=16, out_features=8, bias=True)
+      (i_relu4): ReLU()
+    )
+    (1): Sequential(
+      (i_fc4): Linear(in_features=16, out_features=8, bias=True)
+      (i_relu4): ReLU()
+    )
+    (2): Sequential(
+      (i_fc4): Linear(in_features=16, out_features=8, bias=True)
+      (i_relu4): ReLU()
     )
   )
   (softmax): Softmax(dim=1)
@@ -212,12 +246,3 @@ Epoch 1 starts !
 Epoch 2 starts !
 --------------------------------------------------------------------------------
 Epoch 3 starts !
---------------------------------------------------------------------------------
-Epoch 4 starts !
-/home/luyuan.lq/.conda/envs/xmrec/lib/python3.7/site-packages/torch/cuda/__init__.py:52: UserWarning: CUDA initialization: The NVIDIA driver on your system is too old (found version 9000). Please update your GPU driver by downloading and installing a new version from the URL: http://www.nvidia.com/Download/index.aspx Alternatively, go to: https://pytorch.org to install a PyTorch version that has been compiled with your version of the CUDA driver. (Triggered internally at  ../c10/cuda/CUDAFunctions.cpp:115.)
-  return torch._C._cuda_getDeviceCount() > 0
---------------------------------------------------------------------------------
-Model is trained! and saved at:
---model: checkpoints/s3_s1-s2_toytest_cgc.model
---id_bank: checkpoints/s3_s1-s2_toytest_cgc.pickle
-Experiment finished successfully!
