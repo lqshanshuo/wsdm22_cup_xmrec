@@ -22,56 +22,57 @@ import pdb
 def create_arg_parser():
     """Create argument parser for our baseline. """
     parser = argparse.ArgumentParser('GMFbaseline')
-    
+
     # DATA  Arguments
     parser.add_argument('--model_name', help='model in src/model.py', type=str, default='gmf')
+    parser.add_argument('--self_train', action='store_true', help='use self training')
     parser.add_argument('--num_shared_experts', help='num shared experts for MMoE/GCG/ADI', type=str, default='3')
     parser.add_argument('--hidden_units', help='hidden_units', type=str, default='32,16,8')
     parser.add_argument('--data_dir', help='dataset directory', type=str, default='DATA/')
-    parser.add_argument('--tgt_market', help='specify a target market name', type=str, default='t1') 
-    parser.add_argument('--src_markets', help='specify none ("none") or a few source markets ("-" seperated) to augment the data for training', type=str, default='s1-s2') 
-    
+    parser.add_argument('--tgt_market', help='specify a target market name', type=str, default='t1')
+    parser.add_argument('--src_markets', help='specify none ("none") or a few source markets ("-" seperated) to augment the data for training', type=str, default='s1-s2')
+
     parser.add_argument('--tgt_market_valid', help='specify validation run file for target market', type=str, default='DATA/t1/valid_run.tsv')
-    parser.add_argument('--tgt_market_test', help='specify test run file for target market', type=str, default='DATA/t1/test_run.tsv') 
-    
+    parser.add_argument('--tgt_market_test', help='specify test run file for target market', type=str, default='DATA/t1/test_run.tsv')
+
     parser.add_argument('--exp_name', help='name the experiment',type=str, default='baseline_toy')
-    
+
     parser.add_argument('--train_data_file', help='the file name of the train data',type=str, default='train_5core.tsv') #'train.tsv' for the original data loading
-    
-    
-    # MODEL arguments 
+
+
+    # MODEL arguments
     parser.add_argument('--num_epoch', type=int, default=25, help='number of epoches')
     parser.add_argument('--batch_size', type=int, default=2000, help='batch size')
     parser.add_argument('--lr', type=float, default=0.005, help='learning rate')
     parser.add_argument('--l2_reg', type=float, default=1e-07, help='learning rate')
     parser.add_argument('--latent_dim', type=int, default=8, help='latent dimensions')
     parser.add_argument('--num_negative', type=int, default=19, help='num of negative samples during training')
-    
+
     parser.add_argument('--cuda', action='store_true', help='use of cuda')
     parser.add_argument('--seed', type=int, default=42, help='manual seed init')
-    
+
     return parser
 
 
 
 def main():
-    
+
     parser = create_arg_parser()
     args = parser.parse_args()
     set_seed(args)
-    
+
     if torch.cuda.is_available() and args.cuda:
         torch.cuda.set_device(0)
     args.device = torch.device('cuda' if torch.cuda.is_available() and args.cuda else 'cpu')
     print(f'Running experiment on device: {args.device}')
-    
+
     ############
     ## Target Market data
     ############
     my_id_bank = Central_ID_Bank()
-    
+
     train_file_names = args.train_data_file # 'train_5core.tsv', 'train.tsv' for the original data loading
-    
+
     tgt_train_data_dir = os.path.join(args.data_dir, args.tgt_market, train_file_names)
     tgt_train_ratings = pd.read_csv(tgt_train_data_dir, sep='\t')
 
@@ -83,7 +84,7 @@ def main():
     # task_gen_all: contains data for all training markets, index 0 for target market data
     task_gen_all = {
         0: tgt_task_generator
-    }  
+    }
     # pdb.set_trace()
 
     ############
@@ -107,10 +108,10 @@ def main():
     ## Validation and Test Run
     ############
     tgt_task_generator.instance_a_market_valid_dataloader(f'DATA/{args.tgt_market}/valid_run.tsv', args.batch_size)
-    
-    
+
+
     ############
-    ## Model  
+    ## Model
     ############
     mymodel = Model(args, my_id_bank)
     mymodel.fit(train_dataloader)
@@ -121,14 +122,14 @@ def main():
     # valid_output_file = f'valid_{args.tgt_market}_{args.src_markets}_{args.exp_name}.tsv'
     # print(f'--validation: {valid_output_file}')
     # write_run_file(valid_run_mf, valid_output_file)
-    
+
     # test data prediction
     # test_run_mf = mymodel.predict(tgt_test_dataloader)
     # test_output_file = f'test_{args.tgt_market}_{args.src_markets}_{args.exp_name}.tsv'
     # args.deviceprint(f'--test: {test_output_file}')
     # write_run_file(test_run_mf, test_output_file)
-    
+
     print('Experiment finished successfully!')
-    
+
 if __name__=="__main__":
     main()
