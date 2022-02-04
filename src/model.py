@@ -1,4 +1,4 @@
-iimport torch
+import torch
 import torch.nn as nn
 import pickle
 from utils import *
@@ -86,7 +86,7 @@ class Model(object):
             train_dataloader.refresh_dataloaders()
             data_lens = [len(train_dataloader[idx]) for idx in range(train_dataloader.num_tasks)]
             iteration_num = max(data_lens)
-            print(f'iteration num per epoch is {iteration_num}')
+            print(f'iteration num is {iteration_num}')
             for iteration in range(iteration_num):
                 for subtask_num in range(train_dataloader.num_tasks): # get one batch from each dataloader
                     cur_train_dataloader = train_dataloader.get_iterator(subtask_num)
@@ -123,6 +123,7 @@ class Model(object):
                             if int(ratings_pred_st_1.shape[0]*ratio_topk_st)<1:
                                 continue
                             _, topk_idc = ratings_pred_st_1[:, 0].topk(int(ratings_pred_st_1.shape[0]*ratio_topk_st))
+                            print(topk_idc.shape)
                             ratings_pred_st_2 = ratings_pred_st_1.gather(0, topk_idc.unsqueeze(1).expand(-1, self.config['num_negative']+1))
                             train_targets_st_2 = train_targets_st_1.gather(0, topk_idc.unsqueeze(1).expand(-1, self.config['num_negative']+1))
                             loss_st = loss_st + self.model.get_loss(ratings_pred_st_2.view(-1), train_targets_st_2.view(-1), self.args.device)
@@ -277,23 +278,23 @@ class DNNBase(nn.Module):
             adi_factor = 3 if use_adi_cat else 1
             if fc_only:
                 return nn.Sequential(OrderedDict([
-                                (f'{prefix}_fc3', nn.Linear(in_features=self.config['hidden_units'][1]*adi_factor, out_features=self.config['hidden_units'][1]*adi_factor)),
+                                (f'{prefix}_fc3', nn.Linear(in_features=self.config['hidden_units'][1]*adi_factor, out_features=self.config['hidden_units'][2]*adi_factor)),
                                ]))
             else:
                 return nn.Sequential(OrderedDict([
-                            (f'{prefix}_fc3', nn.Linear(in_features=self.config['hidden_units'][1]*adi_factor, out_features=self.config['hidden_units'][1]*adi_factor)),
-                            (f'{prefix}_bn3', nn.BatchNorm1d(self.config['hidden_units'][1])),
+                            (f'{prefix}_fc3', nn.Linear(in_features=self.config['hidden_units'][1]*adi_factor, out_features=self.config['hidden_units'][2]*adi_factor)),
+                            (f'{prefix}_bn3', nn.BatchNorm1d(self.config['hidden_units'][2]*adi_factor)),
                             (f'{prefix}_relu3', nn.ReLU()),
                            ]))
         if level == 4:
             adi_factor = 3 if use_adi_cat else 1
             if fc_only:
                 return nn.Sequential(OrderedDict([
-                                (f'{prefix}_fc4', nn.Linear(in_features=self.config['hidden_units'][1]*adi_factor, out_features=self.config['hidden_units'][2])),
+                                (f'{prefix}_fc4', nn.Linear(in_features=self.config['hidden_units'][2]*adi_factor, out_features=self.config['hidden_units'][3])),
                                ]))
             else:
                 return nn.Sequential(OrderedDict([
-                            (f'{prefix}_fc4', nn.Linear(in_features=self.config['hidden_units'][1]*adi_factor, out_features=self.config['hidden_units'][2])),
+                            (f'{prefix}_fc4', nn.Linear(in_features=self.config['hidden_units'][2]*adi_factor, out_features=self.config['hidden_units'][3])),
                             (f'{prefix}_relu4', nn.ReLU()),
                            ]))
 
@@ -349,11 +350,13 @@ class SharedBottom(DNNBase):
         super(SharedBottom, self).__init__(config)
         self.umlp1 = self.get_mlp(1, 'u')
         self.umlp2 = self.get_mlp(2, 'u')
-        self.umlp3 = nn.ModuleList([self.get_mlp(3, 'u') for i in range(config['num_tasks'])])
+        self.umlp3 = self.get_mlp(3, 'u')
+        #self.umlp3 = nn.ModuleList([self.get_mlp(3, 'u') for i in range(config['num_tasks'])])
         self.umlp4 = nn.ModuleList([self.get_mlp(4, 'u') for i in range(config['num_tasks'])])
         self.imlp1 = self.get_mlp(1, 'i')
         self.imlp2 = self.get_mlp(2, 'i')
-        self.imlp3 = nn.ModuleList([self.get_mlp(3, 'i') for i in range(config['num_tasks'])])
+        self.imlp3 = self.get_mlp(3, 'i')
+        #self.imlp3 = nn.ModuleList([self.get_mlp(3, 'i') for i in range(config['num_tasks'])])
         self.imlp4 = nn.ModuleList([self.get_mlp(4, 'i') for i in range(config['num_tasks'])])
 
         self.softmax = nn.Softmax(dim=1)
@@ -369,11 +372,13 @@ class SharedBottom(DNNBase):
             item_embedding = self.embedding_item[item_indices]
         u = self.umlp1(user_embedding)
         u = self.umlp2(u)
-        u = self.umlp3[domain_idc](u)
+        #u = self.umlp3[domain_idc](u)
+        u = self.umlp3(u)
         u = self.umlp4[domain_idc](u)
         i = self.imlp1(item_embedding)
         i = self.imlp2(i)
-        i = self.imlp3[domain_idc](i)
+        i = self.imlp3(i)
+        #i = self.imlp3[domain_idc](i)
         i = self.imlp4[domain_idc](i)
         logits = torch.sum(torch.mul(u, i), dim=1)
         if self.training:
@@ -385,16 +390,16 @@ class SharedBottom(DNNBase):
 class CrossStitch(DNNBase):
     def __init__(self, config):
         super(CrossStitch, self).__init__(config)
-        self.umlps1 = nn.ModuleList([self.get_mlp(1, 'u') for i in range(config['num_shared_experts']+config['num_tasks'])])
-        self.ucs1 = nn.Linear(in_features=config['num_shared_experts']+config['num_tasks'], out_features=config['num_shared_experts']+config['num_tasks'])
-        self.umlps2 = nn.ModuleList([self.get_mlp(2, 'u') for i in range(config['num_shared_experts']+config['num_tasks'])])
-        self.ucs2 = nn.Linear(in_features=config['num_shared_experts']+config['num_tasks'], out_features=config['num_tasks'])
+        self.umlps1 = nn.ModuleList([self.get_mlp(1, 'u') for i in range(config['num_tasks'])])
+        self.ucs1 = nn.Linear(in_features=config['num_tasks'], out_features=config['num_tasks'])
+        self.umlps2 = nn.ModuleList([self.get_mlp(2, 'u') for i in range(config['num_tasks'])])
+        self.ucs2 = nn.Linear(in_features=config['num_tasks'], out_features=config['num_tasks'])
         self.umlp3 = nn.ModuleList([self.get_mlp(3, 'u') for i in range(config['num_tasks'])])
         self.umlp4 = nn.ModuleList([self.get_mlp(4, 'u') for i in range(config['num_tasks'])])
-        self.imlps1 = nn.ModuleList([self.get_mlp(1, 'i') for i in range(config['num_shared_experts']+config['num_tasks'])])
-        self.ics1 = nn.Linear(in_features=config['num_shared_experts']+config['num_tasks'], out_features=config['num_shared_experts']+config['num_tasks'])
-        self.imlps2 = nn.ModuleList([self.get_mlp(2, 'i') for i in range(config['num_shared_experts']+config['num_tasks'])])
-        self.ics2 = nn.Linear(in_features=config['num_shared_experts']+config['num_tasks'], out_features=config['num_tasks'])
+        self.imlps1 = nn.ModuleList([self.get_mlp(1, 'i') for i in range(config['num_tasks'])])
+        self.ics1 = nn.Linear(in_features=config['num_tasks'], out_features=config['num_tasks'])
+        self.imlps2 = nn.ModuleList([self.get_mlp(2, 'i') for i in range(config['num_tasks'])])
+        self.ics2 = nn.Linear(in_features=config['num_tasks'], out_features=config['num_tasks'])
         self.imlp3 = nn.ModuleList([self.get_mlp(3, 'i') for i in range(config['num_tasks'])])
         self.imlp4 = nn.ModuleList([self.get_mlp(4, 'i') for i in range(config['num_tasks'])])
 
@@ -562,106 +567,106 @@ class CGC(DNNBase):
         else:
             return logits.view(-1, 1)
 
-class ADIO(DNNBase):
-    def __init__(self, config):
-        super(ADIO, self).__init__(config)
-
-        self.umlps1 = nn.ModuleList([self.get_mlp(1, 'u', fc_only=True) for i in range(config['num_shared_experts'])])
-        self.udsbn1 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][0]) for i in range(config['num_tasks']*config['num_shared_experts'])])
-        self.umlps2 = nn.ModuleList([self.get_mlp(2, 'u', fc_only=True) for i in range(config['num_shared_experts'])])
-        self.udsbn2 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][1]) for i in range(config['num_tasks']*config['num_shared_experts'])])
-        self.umlp1 = nn.ModuleList([self.get_mlp(1, 'u') for i in range(config['num_tasks'])])
-        self.umlp2 = nn.ModuleList([self.get_mlp(2, 'u') for i in range(config['num_tasks'])])
-        self.ugate = nn.ModuleList([
-                         nn.Sequential(OrderedDict([
-                            ('u_gate', nn.Linear(in_features=self.latent_dim, out_features=self.config['num_shared_experts']+1)),
-                            ('u_gate_softmax', nn.Softmax(dim=1)),
-                         ]))
-                         for i in range(config['num_tasks'])
-                     ])
-        self.ugate_adi = nn.Linear(in_features=self.latent_dim*2, out_features=self.config['num_tasks'])
-        self.umlp3 = nn.ModuleList([self.get_mlp(3, 'u', use_adi_cat=False) for i in range(config['num_tasks'])])
-        self.umlp4 = nn.ModuleList([self.get_mlp(4, 'u', use_adi_cat=False) for i in range(config['num_tasks'])])
-
-        self.imlps1 = nn.ModuleList([self.get_mlp(1, 'i', fc_only=True) for i in range(config['num_shared_experts'])])
-        self.idsbn1 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][0]) for i in range(config['num_tasks']*config['num_shared_experts'])])
-        self.imlps2 = nn.ModuleList([self.get_mlp(2, 'i', fc_only=True) for i in range(config['num_shared_experts'])])
-        self.idsbn2 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][1]) for i in range(config['num_tasks']*config['num_shared_experts'])])
-        self.imlp1 = nn.ModuleList([self.get_mlp(1, 'i') for i in range(config['num_tasks'])])
-        self.imlp2 = nn.ModuleList([self.get_mlp(2, 'i') for i in range(config['num_tasks'])])
-        self.igate = nn.ModuleList([
-                         nn.Sequential(OrderedDict([
-                            ('i_gate', nn.Linear(in_features=self.latent_dim, out_features=self.config['num_shared_experts']+1)),
-                            ('i_gate_softmax', nn.Softmax(dim=1)),
-                         ]))
-                         for i in range(config['num_tasks'])
-                     ])
-        self.igate_adi = nn.Linear(in_features=self.latent_dim*2, out_features=self.config['num_tasks'])
-        self.imlp3 = nn.ModuleList([self.get_mlp(3, 'i', use_adi_cat=False) for i in range(config['num_tasks'])])
-        self.imlp4 = nn.ModuleList([self.get_mlp(4, 'i', use_adi_cat=False) for i in range(config['num_tasks'])])
-
-        self.domain_embs = nn.Embedding(config['num_tasks']*2, self.latent_dim, device=config['device'])
-
-        self.relu = nn.ReLU()
-        self.softmax = nn.Softmax(dim=1)
-
-    def forward(self, user_indices, item_indices, domain_idc):
-        if self.trainable_user:
-            user_embedding = self.embedding_user(user_indices)
-        else:
-            user_embedding = self.embedding_user[user_indices]
-        if self.trainable_item:
-            item_embedding = self.embedding_item(item_indices)
-        else:
-            item_embedding = self.embedding_item[item_indices]
-
-        u_expert = self.umlp2[domain_idc](self.umlp1[domain_idc](user_embedding)) # [?*16]
-        u_shared_experts = [self.relu(self.udsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(user_embedding))) for (idx, layer) in enumerate(self.umlps1)]
-        u_experts = torch.stack([u_expert]+[self.relu(self.udsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(u_shared_experts[idx]))) for (idx, layer) in enumerate(self.umlps2)], dim=-1)
-        u_gate = torch.stack([layer(user_embedding) for layer in self.ugate], dim=-1) # [?*3*2]
-        weighted_u_expert = torch.einsum("abc,acd->abd", (u_experts, u_gate))[:,:,domain_idc] # [?*16]
-        u = self.umlp3[domain_idc](weighted_u_expert)
-        u = self.umlp4[domain_idc](u)
-       # u_expert = self.umlp2[domain_idc](self.umlp1[domain_idc](user_embedding)) # [?*16]
-       # u_shared_experts = [self.relu(self.udsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(user_embedding))) for (idx, layer) in enumerate(self.umlps1)]
-       # u_experts = torch.stack([self.relu(self.udsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(u_shared_experts[idx]))) for (idx, layer) in enumerate(self.umlps2)], dim=-1) # [?*16*3]
-       # u_gate = torch.stack([layer(user_embedding) for layer in self.ugate], dim=-1) # [?*3*2]
-       # weighted_u_expert = torch.einsum("abc,acd->abd", (u_experts, u_gate))[:,:,domain_idc] # [?*16]
-       # u_gate_adi_1 = torch.cat([user_embedding, self.domain_embs(torch.LongTensor([domain_idc]*weighted_u_expert.shape[0]).to(self.config['device']))], 1) # [?*2]
-       # u_gate_adi = torch.sigmoid(self.ugate_adi(u_gate_adi_1)) # [?*2]
-       # u_adi_spec = u_expert*u_gate_adi[:,1:2].expand(-1, 16)
-       # u_adi_share = weighted_u_expert*u_gate_adi[:,0:1].expand(-1, 16)
-       # u_adi = torch.cat([u_adi_spec, u_adi_spec*u_adi_share, u_adi_share], 1) # [?*48]
-       # u = self.umlp3[domain_idc](u_adi)
-       # u = self.umlp4[domain_idc](u)
-
-
-        i_expert = self.imlp2[domain_idc](self.imlp1[domain_idc](item_embedding))
-        i_shared_experts = [self.relu(self.idsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(item_embedding))) for (idx, layer) in enumerate(self.imlps1)]
-        i_experts = torch.stack([i_expert]+[self.relu(self.idsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(i_shared_experts[idx]))) for (idx, layer) in enumerate(self.imlps2)], dim=-1)
-        i_gate = torch.stack([layer(item_embedding) for layer in self.igate], dim=-1) # [?*3*2]
-        weighted_i_expert = torch.einsum("abc,acd->abd", (i_experts, i_gate))[:,:,domain_idc] # [?*16]
-        i = self.imlp3[domain_idc](weighted_i_expert)
-        i = self.imlp4[domain_idc](i)
-       # i_expert = self.imlp2[domain_idc](self.imlp1[domain_idc](item_embedding))
-       # i_shared_experts = [self.relu(self.idsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(item_embedding))) for (idx, layer) in enumerate(self.imlps1)]
-       # i_experts = torch.stack([self.relu(self.idsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(i_shared_experts[idx]))) for (idx, layer) in enumerate(self.imlps2)], dim=-1) # [?*16*3]
-       # i_gate = torch.stack([layer(item_embedding) for layer in self.igate], dim=-1) # [?*3*2]
-       # weighted_i_expert = torch.einsum("abc,acd->abd", (i_experts, i_gate))[:,:,domain_idc] # [?*16]
-       # i_gate_adi_1 = torch.cat([item_embedding, self.domain_embs(torch.LongTensor([domain_idc+self.config['num_tasks']]*weighted_i_expert.shape[0]).to(self.config['device']))], 1) # [?*2]
-       # i_gate_adi = torch.sigmoid(self.igate_adi(i_gate_adi_1)) # [?*2]
-       # i_adi_spec = i_expert*i_gate_adi[:,1:2].expand(-1, 16)
-       # i_adi_share = weighted_i_expert*i_gate_adi[:,0:1].expand(-1, 16)
-       # i_adi = torch.cat([i_adi_spec, i_adi_spec*i_adi_share, i_adi_share], 1) # [?*48]
-       # i = self.imlp3[domain_idc](i_adi)
-       # i = self.imlp4[domain_idc](i)
-
-        logits = torch.sum(torch.mul(u, i), dim=1)
-        if self.training:
-            logits = logits.view(-1, self.num_class)
-            return self.softmax(logits).view(-1, 1)
-        else:
-            return logits.view(-1, 1)
+#class ADIO(DNNBase):
+#    def __init__(self, config):
+#        super(ADIO, self).__init__(config)
+#
+#        self.umlps1 = nn.ModuleList([self.get_mlp(1, 'u', fc_only=True) for i in range(config['num_shared_experts'])])
+#        self.udsbn1 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][0]) for i in range(config['num_tasks']*config['num_shared_experts'])])
+#        self.umlps2 = nn.ModuleList([self.get_mlp(2, 'u', fc_only=True) for i in range(config['num_shared_experts'])])
+#        self.udsbn2 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][1]) for i in range(config['num_tasks']*config['num_shared_experts'])])
+#        self.umlp1 = nn.ModuleList([self.get_mlp(1, 'u') for i in range(config['num_tasks'])])
+#        self.umlp2 = nn.ModuleList([self.get_mlp(2, 'u') for i in range(config['num_tasks'])])
+#        self.ugate = nn.ModuleList([
+#                         nn.Sequential(OrderedDict([
+#                            ('u_gate', nn.Linear(in_features=self.latent_dim, out_features=self.config['num_shared_experts']+1)),
+#                            ('u_gate_softmax', nn.Softmax(dim=1)),
+#                         ]))
+#                         for i in range(config['num_tasks'])
+#                     ])
+#        self.ugate_adi = nn.Linear(in_features=self.latent_dim, out_features=self.config['num_tasks'])
+#        self.umlp3 = nn.ModuleList([self.get_mlp(3, 'u', use_adi_cat=False) for i in range(config['num_tasks'])])
+#        self.umlp4 = nn.ModuleList([self.get_mlp(4, 'u', use_adi_cat=False) for i in range(config['num_tasks'])])
+#
+#        self.imlps1 = nn.ModuleList([self.get_mlp(1, 'i', fc_only=True) for i in range(config['num_shared_experts'])])
+#        self.idsbn1 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][0]) for i in range(config['num_tasks']*config['num_shared_experts'])])
+#        self.imlps2 = nn.ModuleList([self.get_mlp(2, 'i', fc_only=True) for i in range(config['num_shared_experts'])])
+#        self.idsbn2 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][1]) for i in range(config['num_tasks']*config['num_shared_experts'])])
+#        self.imlp1 = nn.ModuleList([self.get_mlp(1, 'i') for i in range(config['num_tasks'])])
+#        self.imlp2 = nn.ModuleList([self.get_mlp(2, 'i') for i in range(config['num_tasks'])])
+#        self.igate = nn.ModuleList([
+#                         nn.Sequential(OrderedDict([
+#                            ('i_gate', nn.Linear(in_features=self.latent_dim, out_features=self.config['num_shared_experts']+1)),
+#                            ('i_gate_softmax', nn.Softmax(dim=1)),
+#                         ]))
+#                         for i in range(config['num_tasks'])
+#                     ])
+#        self.igate_adi = nn.Linear(in_features=self.latent_dim, out_features=self.config['num_tasks'])
+#        self.imlp3 = nn.ModuleList([self.get_mlp(3, 'i', use_adi_cat=False) for i in range(config['num_tasks'])])
+#        self.imlp4 = nn.ModuleList([self.get_mlp(4, 'i', use_adi_cat=False) for i in range(config['num_tasks'])])
+#
+#        self.domain_embs = nn.Embedding(config['num_tasks']*2, self.latent_dim, device=config['device'])
+#
+#        self.relu = nn.ReLU()
+#        self.softmax = nn.Softmax(dim=1)
+#
+#    def forward(self, user_indices, item_indices, domain_idc):
+#        if self.trainable_user:
+#            user_embedding = self.embedding_user(user_indices)
+#        else:
+#            user_embedding = self.embedding_user[user_indices]
+#        if self.trainable_item:
+#            item_embedding = self.embedding_item(item_indices)
+#        else:
+#            item_embedding = self.embedding_item[item_indices]
+#
+#        u_expert = self.umlp2[domain_idc](self.umlp1[domain_idc](user_embedding)) # [?*16]
+#        u_shared_experts = [self.relu(self.udsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(user_embedding))) for (idx, layer) in enumerate(self.umlps1)]
+#        u_experts = torch.stack([u_expert]+[self.relu(self.udsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(u_shared_experts[idx]))) for (idx, layer) in enumerate(self.umlps2)], dim=-1)
+#        u_gate = torch.stack([layer(user_embedding) for layer in self.ugate], dim=-1) # [?*3*2]
+#        weighted_u_expert = torch.einsum("abc,acd->abd", (u_experts, u_gate))[:,:,domain_idc] # [?*16]
+#        u = self.umlp3[domain_idc](weighted_u_expert)
+#        u = self.umlp4[domain_idc](u)
+#       # u_expert = self.umlp2[domain_idc](self.umlp1[domain_idc](user_embedding)) # [?*16]
+#       # u_shared_experts = [self.relu(self.udsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(user_embedding))) for (idx, layer) in enumerate(self.umlps1)]
+#       # u_experts = torch.stack([self.relu(self.udsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(u_shared_experts[idx]))) for (idx, layer) in enumerate(self.umlps2)], dim=-1) # [?*16*3]
+#       # u_gate = torch.stack([layer(user_embedding) for layer in self.ugate], dim=-1) # [?*3*2]
+#       # weighted_u_expert = torch.einsum("abc,acd->abd", (u_experts, u_gate))[:,:,domain_idc] # [?*16]
+#       # u_gate_adi_1 = torch.cat([user_embedding, self.domain_embs(torch.LongTensor([domain_idc]*weighted_u_expert.shape[0]).to(self.config['device']))], 1) # [?*2]
+#       # u_gate_adi = torch.sigmoid(self.ugate_adi(u_gate_adi_1)) # [?*2]
+#       # u_adi_spec = u_expert*u_gate_adi[:,1:2].expand(-1, 16)
+#       # u_adi_share = weighted_u_expert*u_gate_adi[:,0:1].expand(-1, 16)
+#       # u_adi = torch.cat([u_adi_spec, u_adi_spec*u_adi_share, u_adi_share], 1) # [?*48]
+#       # u = self.umlp3[domain_idc](u_adi)
+#       # u = self.umlp4[domain_idc](u)
+#
+#
+#        i_expert = self.imlp2[domain_idc](self.imlp1[domain_idc](item_embedding))
+#        i_shared_experts = [self.relu(self.idsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(item_embedding))) for (idx, layer) in enumerate(self.imlps1)]
+#        i_experts = torch.stack([i_expert]+[self.relu(self.idsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(i_shared_experts[idx]))) for (idx, layer) in enumerate(self.imlps2)], dim=-1)
+#        i_gate = torch.stack([layer(item_embedding) for layer in self.igate], dim=-1) # [?*3*2]
+#        weighted_i_expert = torch.einsum("abc,acd->abd", (i_experts, i_gate))[:,:,domain_idc] # [?*16]
+#        i = self.imlp3[domain_idc](weighted_i_expert)
+#        i = self.imlp4[domain_idc](i)
+#       # i_expert = self.imlp2[domain_idc](self.imlp1[domain_idc](item_embedding))
+#       # i_shared_experts = [self.relu(self.idsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(item_embedding))) for (idx, layer) in enumerate(self.imlps1)]
+#       # i_experts = torch.stack([self.relu(self.idsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(i_shared_experts[idx]))) for (idx, layer) in enumerate(self.imlps2)], dim=-1) # [?*16*3]
+#       # i_gate = torch.stack([layer(item_embedding) for layer in self.igate], dim=-1) # [?*3*2]
+#       # weighted_i_expert = torch.einsum("abc,acd->abd", (i_experts, i_gate))[:,:,domain_idc] # [?*16]
+#       # i_gate_adi_1 = torch.cat([item_embedding, self.domain_embs(torch.LongTensor([domain_idc+self.config['num_tasks']]*weighted_i_expert.shape[0]).to(self.config['device']))], 1) # [?*2]
+#       # i_gate_adi = torch.sigmoid(self.igate_adi(i_gate_adi_1)) # [?*2]
+#       # i_adi_spec = i_expert*i_gate_adi[:,1:2].expand(-1, 16)
+#       # i_adi_share = weighted_i_expert*i_gate_adi[:,0:1].expand(-1, 16)
+#       # i_adi = torch.cat([i_adi_spec, i_adi_spec*i_adi_share, i_adi_share], 1) # [?*48]
+#       # i = self.imlp3[domain_idc](i_adi)
+#       # i = self.imlp4[domain_idc](i)
+#
+#        logits = torch.sum(torch.mul(u, i), dim=1)
+#        if self.training:
+#            logits = logits.view(-1, self.num_class)
+#            return self.softmax(logits).view(-1, 1)
+#        else:
+#            return logits.view(-1, 1)
 
 class ADI(DNNBase):
     def __init__(self, config):
@@ -680,7 +685,7 @@ class ADI(DNNBase):
                          ]))
                          for i in range(config['num_tasks'])
                      ])
-        self.ugate_adi = nn.Linear(in_features=self.latent_dim*2, out_features=self.config['num_tasks'])
+        self.ugate_adi = nn.Linear(in_features=self.latent_dim, out_features=2)
         self.umlp3 = nn.ModuleList([self.get_mlp(3, 'u', use_adi_cat=True) for i in range(config['num_tasks'])])
         self.umlp4 = nn.ModuleList([self.get_mlp(4, 'u', use_adi_cat=True) for i in range(config['num_tasks'])])
 
@@ -697,7 +702,7 @@ class ADI(DNNBase):
                          ]))
                          for i in range(config['num_tasks'])
                      ])
-        self.igate_adi = nn.Linear(in_features=self.latent_dim*2, out_features=self.config['num_tasks'])
+        self.igate_adi = nn.Linear(in_features=self.latent_dim, out_features=2)
         self.imlp3 = nn.ModuleList([self.get_mlp(3, 'i', use_adi_cat=True) for i in range(config['num_tasks'])])
         self.imlp4 = nn.ModuleList([self.get_mlp(4, 'i', use_adi_cat=True) for i in range(config['num_tasks'])])
 
@@ -716,43 +721,28 @@ class ADI(DNNBase):
         else:
             item_embedding = self.embedding_item[item_indices]
 
-       # u_expert = self.umlp2[domain_idc](self.umlp1[domain_idc](user_embedding)) # [?*16]
-       # u_shared_experts = [self.relu(self.udsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(user_embedding))) for (idx, layer) in enumerate(self.umlps1)]
-       # u_experts = torch.stack([u_expert]+[self.relu(self.udsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(u_shared_experts[idx]))) for (idx, layer) in enumerate(self.umlps2)], dim=-1)
-       # u_gate = torch.stack([layer(user_embedding) for layer in self.ugate], dim=-1) # [?*3*2]
-       # weighted_u_expert = torch.einsum("abc,acd->abd", (u_experts, u_gate))[:,:,domain_idc] # [?*16]
-       # u_adi = self.umlp3[domain_idc](weighted_u_expert)
-       # u_adi = self.umlp4[domain_idc](u_adi)
         u_expert = self.umlp2[domain_idc](self.umlp1[domain_idc](user_embedding)) # [?*16]
         u_shared_experts = [self.relu(self.udsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(user_embedding))) for (idx, layer) in enumerate(self.umlps1)]
         u_experts = torch.stack([self.relu(self.udsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(u_shared_experts[idx]))) for (idx, layer) in enumerate(self.umlps2)], dim=-1) # [?*16*3]
         u_gate = torch.stack([layer(user_embedding) for layer in self.ugate], dim=-1) # [?*3*2]
         weighted_u_expert = torch.einsum("abc,acd->abd", (u_experts, u_gate))[:,:,domain_idc] # [?*16]
-        u_gate_adi_1 = torch.cat([user_embedding, self.domain_embs(torch.LongTensor([domain_idc]*weighted_u_expert.shape[0]).to(self.config['device']))], 1) # [?*2]
+        u_gate_adi_1 = user_embedding + self.domain_embs(torch.LongTensor([domain_idc]*weighted_u_expert.shape[0]).to(self.config['device'])) # [?*2]
         u_gate_adi = torch.sigmoid(self.ugate_adi(u_gate_adi_1)) # [?*2]
-        u_adi_spec = u_expert*u_gate_adi[:,1:2].expand(-1, 16)
-        u_adi_share = weighted_u_expert*u_gate_adi[:,0:1].expand(-1, 16)
+        u_adi_spec = u_expert*u_gate_adi[:,1:2].expand(-1, u_expert.shape[1])
+        u_adi_share = weighted_u_expert*u_gate_adi[:,0:1].expand(-1, weighted_u_expert.shape[1])
         u_adi = torch.cat([u_adi_spec, u_adi_spec*u_adi_share, u_adi_share], 1) # [?*48]
         u = self.umlp3[domain_idc](u_adi)
         u = self.umlp4[domain_idc](u)
 
-
-       # i_expert = self.imlp2[domain_idc](self.imlp1[domain_idc](item_embedding))
-       # i_shared_experts = [self.relu(self.idsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(item_embedding))) for (idx, layer) in enumerate(self.imlps1)]
-       # i_experts = torch.stack([i_expert]+[self.relu(self.idsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(i_shared_experts[idx]))) for (idx, layer) in enumerate(self.imlps2)], dim=-1)
-       # i_gate = torch.stack([layer(item_embedding) for layer in self.igate], dim=-1) # [?*3*2]
-       # weighted_i_expert = torch.einsum("abc,acd->abd", (i_experts, i_gate))[:,:,domain_idc] # [?*16]
-       # i_adi = self.imlp3[domain_idc](weighted_i_expert)
-       # i_adi = self.imlp4[domain_idc](i_adi)
         i_expert = self.imlp2[domain_idc](self.imlp1[domain_idc](item_embedding))
         i_shared_experts = [self.relu(self.idsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(item_embedding))) for (idx, layer) in enumerate(self.imlps1)]
         i_experts = torch.stack([self.relu(self.idsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(i_shared_experts[idx]))) for (idx, layer) in enumerate(self.imlps2)], dim=-1) # [?*16*3]
         i_gate = torch.stack([layer(item_embedding) for layer in self.igate], dim=-1) # [?*3*2]
         weighted_i_expert = torch.einsum("abc,acd->abd", (i_experts, i_gate))[:,:,domain_idc] # [?*16]
-        i_gate_adi_1 = torch.cat([item_embedding, self.domain_embs(torch.LongTensor([domain_idc+self.config['num_tasks']]*weighted_i_expert.shape[0]).to(self.config['device']))], 1) # [?*2]
+        i_gate_adi_1 = item_embedding + self.domain_embs(torch.LongTensor([domain_idc+self.config['num_tasks']]*weighted_i_expert.shape[0]).to(self.config['device'])) # [?*2]
         i_gate_adi = torch.sigmoid(self.igate_adi(i_gate_adi_1)) # [?*2]
-        i_adi_spec = i_expert*i_gate_adi[:,1:2].expand(-1, 16)
-        i_adi_share = weighted_i_expert*i_gate_adi[:,0:1].expand(-1, 16)
+        i_adi_spec = i_expert*i_gate_adi[:,1:2].expand(-1, i_expert.shape[1])
+        i_adi_share = weighted_i_expert*i_gate_adi[:,0:1].expand(-1, weighted_i_expert.shape[1])
         i_adi = torch.cat([i_adi_spec, i_adi_spec*i_adi_share, i_adi_share], 1) # [?*48]
         i = self.imlp3[domain_idc](i_adi)
         i = self.imlp4[domain_idc](i)
@@ -764,115 +754,88 @@ class ADI(DNNBase):
         else:
             return logits.view(-1, 1)
 
-class ADISM(DNNBase):
-    def __init__(self, config):
-        super(ADISM, self).__init__(config)
-
-        self.umlps1 = nn.ModuleList([self.get_mlp(1, 'u', fc_only=True) for i in range(config['num_shared_experts'])])
-        self.udsbn1 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][0]) for i in range(config['num_tasks']*config['num_shared_experts'])])
-        self.umlps2 = nn.ModuleList([self.get_mlp(2, 'u', fc_only=True) for i in range(config['num_shared_experts'])])
-        self.udsbn2 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][1]) for i in range(config['num_tasks']*config['num_shared_experts'])])
-        self.umlp1 = nn.ModuleList([self.get_mlp(1, 'u') for i in range(config['num_tasks'])])
-        self.umlp2 = nn.ModuleList([self.get_mlp(2, 'u') for i in range(config['num_tasks'])])
-        self.ugate = nn.ModuleList([
-                         nn.Sequential(OrderedDict([
-                            ('u_gate', nn.Linear(in_features=self.latent_dim, out_features=self.config['num_shared_experts'])),
-                            ('u_gate_softmax', nn.Softmax(dim=1)),
-                         ]))
-                         for i in range(config['num_tasks'])
-                     ])
-        self.ugate_adi = nn.ModuleList([
-                           nn.Sequential(OrderedDict([
-                                ('u_gate_adi', nn.Linear(in_features=self.latent_dim*2, out_features=2)),
-                                ('u_gate_adi_softmax', nn.Softmax(dim=1)),
-                             ]))
-                             for i in range(config['num_tasks'])
-                         ])
-        self.umlp3 = nn.ModuleList([self.get_mlp(3, 'u', use_adi_cat=True) for i in range(config['num_tasks'])])
-        self.umlp4 = nn.ModuleList([self.get_mlp(4, 'u', use_adi_cat=True) for i in range(config['num_tasks'])])
-
-        self.imlps1 = nn.ModuleList([self.get_mlp(1, 'i', fc_only=True) for i in range(config['num_shared_experts'])])
-        self.idsbn1 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][0]) for i in range(config['num_tasks']*config['num_shared_experts'])])
-        self.imlps2 = nn.ModuleList([self.get_mlp(2, 'i', fc_only=True) for i in range(config['num_shared_experts'])])
-        self.idsbn2 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][1]) for i in range(config['num_tasks']*config['num_shared_experts'])])
-        self.imlp1 = nn.ModuleList([self.get_mlp(1, 'i') for i in range(config['num_tasks'])])
-        self.imlp2 = nn.ModuleList([self.get_mlp(2, 'i') for i in range(config['num_tasks'])])
-        self.igate = nn.ModuleList([
-                         nn.Sequential(OrderedDict([
-                            ('i_gate', nn.Linear(in_features=self.latent_dim, out_features=self.config['num_shared_experts'])),
-                            ('i_gate_softmax', nn.Softmax(dim=1)),
-                         ]))
-                         for i in range(config['num_tasks'])
-                     ])
-        self.igate_adi = nn.ModuleList([
-                           nn.Sequential(OrderedDict([
-                                ('i_gate_adi', nn.Linear(in_features=self.latent_dim*2, out_features=2)),
-                                ('i_gate_adi_softmax', nn.Softmax(dim=1)),
-                             ]))
-                             for i in range(config['num_tasks'])
-                         ])
-        self.imlp3 = nn.ModuleList([self.get_mlp(3, 'i', use_adi_cat=True) for i in range(config['num_tasks'])])
-        self.imlp4 = nn.ModuleList([self.get_mlp(4, 'i', use_adi_cat=True) for i in range(config['num_tasks'])])
-
-        self.domain_embs = nn.Embedding(config['num_tasks']*2, self.latent_dim, device=config['device'])
-
-        self.relu = nn.ReLU()
-        self.softmax = nn.Softmax(dim=1)
-
-    def forward(self, user_indices, item_indices, domain_idc):
-        if self.trainable_user:
-            user_embedding = self.embedding_user(user_indices)
-        else:
-            user_embedding = self.embedding_user[user_indices]
-        if self.trainable_item:
-            item_embedding = self.embedding_item(item_indices)
-        else:
-            item_embedding = self.embedding_item[item_indices]
-
-       # u_expert = self.umlp2[domain_idc](self.umlp1[domain_idc](user_embedding)) # [?*16]
-       # u_shared_experts = [self.relu(self.udsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(user_embedding))) for (idx, layer) in enumerate(self.umlps1)]
-       # u_experts = torch.stack([u_expert]+[self.relu(self.udsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(u_shared_experts[idx]))) for (idx, layer) in enumerate(self.umlps2)], dim=-1)
-       # u_gate = torch.stack([layer(user_embedding) for layer in self.ugate], dim=-1) # [?*3*2]
-       # weighted_u_expert = torch.einsum("abc,acd->abd", (u_experts, u_gate))[:,:,domain_idc] # [?*16]
-       # u_adi = self.umlp3[domain_idc](weighted_u_expert)
-       # u_adi = self.umlp4[domain_idc](u_adi)
-        u_expert = self.umlp2[domain_idc](self.umlp1[domain_idc](user_embedding)) # [?*16]
-        u_shared_experts = [self.relu(self.udsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(user_embedding))) for (idx, layer) in enumerate(self.umlps1)]
-        u_experts = torch.stack([self.relu(self.udsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(u_shared_experts[idx]))) for (idx, layer) in enumerate(self.umlps2)], dim=-1) # [?*16*3]
-        u_gate = torch.stack([layer(user_embedding) for layer in self.ugate], dim=-1) # [?*3*2]
-        weighted_u_expert = torch.einsum("abc,acd->abd", (u_experts, u_gate))[:,:,domain_idc] # [?*16]
-        u_gate_adi_emb = torch.cat([user_embedding, self.domain_embs(torch.LongTensor([domain_idc]*weighted_u_expert.shape[0]).to(self.config['device']))], 1) # [?*2]
-        u_gate_adi = self.ugate_adi[domain_idc](u_gate_adi_emb) # [?*2]
-        u_adi_spec = u_expert*u_gate_adi[:,1:2].expand(-1, 16)
-        u_adi_share = weighted_u_expert*u_gate_adi[:,0:1].expand(-1, 16)
-        u_adi = torch.cat([u_adi_spec, u_adi_spec*u_adi_share, u_adi_share], 1) # [?*48]
-        u = self.umlp3[domain_idc](u_adi)
-        u = self.umlp4[domain_idc](u)
-
-
-       # i_expert = self.imlp2[domain_idc](self.imlp1[domain_idc](item_embedding))
-       # i_shared_experts = [self.relu(self.idsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(item_embedding))) for (idx, layer) in enumerate(self.imlps1)]
-       # i_experts = torch.stack([i_expert]+[self.relu(self.idsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(i_shared_experts[idx]))) for (idx, layer) in enumerate(self.imlps2)], dim=-1)
-       # i_gate = torch.stack([layer(item_embedding) for layer in self.igate], dim=-1) # [?*3*2]
-       # weighted_i_expert = torch.einsum("abc,acd->abd", (i_experts, i_gate))[:,:,domain_idc] # [?*16]
-       # i_adi = self.imlp3[domain_idc](weighted_i_expert)
-       # i_adi = self.imlp4[domain_idc](i_adi)
-        i_expert = self.imlp2[domain_idc](self.imlp1[domain_idc](item_embedding))
-        i_shared_experts = [self.relu(self.idsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(item_embedding))) for (idx, layer) in enumerate(self.imlps1)]
-        i_experts = torch.stack([self.relu(self.idsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(i_shared_experts[idx]))) for (idx, layer) in enumerate(self.imlps2)], dim=-1) # [?*16*3]
-        i_gate = torch.stack([layer(item_embedding) for layer in self.igate], dim=-1) # [?*3*2]
-        weighted_i_expert = torch.einsum("abc,acd->abd", (i_experts, i_gate))[:,:,domain_idc] # [?*16]
-        i_gate_adi_emb = torch.cat([item_embedding, self.domain_embs(torch.LongTensor([domain_idc+self.config['num_tasks']]*weighted_i_expert.shape[0]).to(self.config['device']))], 1) # [?*2]
-        i_gate_adi = self.igate_adi[domain_idc](i_gate_adi_emb) # [?*2]
-        i_adi_spec = i_expert*i_gate_adi[:,1:2].expand(-1, 16)
-        i_adi_share = weighted_i_expert*i_gate_adi[:,0:1].expand(-1, 16)
-        i_adi = torch.cat([i_adi_spec, i_adi_spec*i_adi_share, i_adi_share], 1) # [?*48]
-        i = self.imlp3[domain_idc](i_adi)
-        i = self.imlp4[domain_idc](i)
-
-        logits = torch.sum(torch.mul(u, i), dim=1)
-        if self.training:
-            logits = logits.view(-1, self.num_class)
-            return self.softmax(logits).view(-1, 1)
-        else:
-            return logits.view(-1, 1)
+#class ADISM(DNNBase):
+#    def __init__(self, config):
+#        super(ADISM, self).__init__(config)
+#
+#        self.umlps1 = nn.ModuleList([self.get_mlp(1, 'u', fc_only=True) for i in range(config['num_shared_experts'])])
+#        self.udsbn1 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][0]) for i in range(config['num_tasks']*config['num_shared_experts'])])
+#        self.umlps2 = nn.ModuleList([self.get_mlp(2, 'u', fc_only=True) for i in range(config['num_shared_experts'])])
+#        self.udsbn2 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][1]) for i in range(config['num_tasks']*config['num_shared_experts'])])
+#        self.umlp1 = nn.ModuleList([self.get_mlp(1, 'u') for i in range(config['num_tasks'])])
+#        self.umlp2 = nn.ModuleList([self.get_mlp(2, 'u') for i in range(config['num_tasks'])])
+#        self.ugate = nn.ModuleList([
+#                         nn.Sequential(OrderedDict([
+#                            ('u_gate', nn.Linear(in_features=self.latent_dim, out_features=self.config['num_shared_experts'])),
+#                            ('u_gate_softmax', nn.Softmax(dim=1)),
+#                         ]))
+#                         for i in range(config['num_tasks'])
+#                     ])
+#        self.ugate_adi = nn.Linear(in_features=self.latent_dim, out_features=self.config['num_tasks'])
+#        self.umlp3 = nn.ModuleList([self.get_mlp(3, 'u', use_adi_cat=False) for i in range(config['num_tasks'])])
+#        self.umlp4 = nn.ModuleList([self.get_mlp(4, 'u', use_adi_cat=False) for i in range(config['num_tasks'])])
+#
+#        self.imlps1 = nn.ModuleList([self.get_mlp(1, 'i', fc_only=True) for i in range(config['num_shared_experts'])])
+#        self.idsbn1 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][0]) for i in range(config['num_tasks']*config['num_shared_experts'])])
+#        self.imlps2 = nn.ModuleList([self.get_mlp(2, 'i', fc_only=True) for i in range(config['num_shared_experts'])])
+#        self.idsbn2 = nn.ModuleList([nn.BatchNorm1d(self.config['hidden_units'][1]) for i in range(config['num_tasks']*config['num_shared_experts'])])
+#        self.imlp1 = nn.ModuleList([self.get_mlp(1, 'i') for i in range(config['num_tasks'])])
+#        self.imlp2 = nn.ModuleList([self.get_mlp(2, 'i') for i in range(config['num_tasks'])])
+#        self.igate = nn.ModuleList([
+#                         nn.Sequential(OrderedDict([
+#                            ('i_gate', nn.Linear(in_features=self.latent_dim, out_features=self.config['num_shared_experts'])),
+#                            ('i_gate_softmax', nn.Softmax(dim=1)),
+#                         ]))
+#                         for i in range(config['num_tasks'])
+#                     ])
+#        self.igate_adi = nn.Linear(in_features=self.latent_dim, out_features=self.config['num_tasks'])
+#        self.imlp3 = nn.ModuleList([self.get_mlp(3, 'i', use_adi_cat=False) for i in range(config['num_tasks'])])
+#        self.imlp4 = nn.ModuleList([self.get_mlp(4, 'i', use_adi_cat=False) for i in range(config['num_tasks'])])
+#
+#        self.domain_embs = nn.Embedding(config['num_tasks']*2, self.latent_dim, device=config['device'])
+#
+#        self.relu = nn.ReLU()
+#        self.softmax = nn.Softmax(dim=1)
+#
+#    def forward(self, user_indices, item_indices, domain_idc):
+#        if self.trainable_user:
+#            user_embedding = self.embedding_user(user_indices)
+#        else:
+#            user_embedding = self.embedding_user[user_indices]
+#        if self.trainable_item:
+#            item_embedding = self.embedding_item(item_indices)
+#        else:
+#            item_embedding = self.embedding_item[item_indices]
+#
+#        u_expert = self.umlp2[domain_idc](self.umlp1[domain_idc](user_embedding)) # [?*16]
+#        u_shared_experts = [self.relu(self.udsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(user_embedding))) for (idx, layer) in enumerate(self.umlps1)]
+#        u_experts = torch.stack([self.relu(self.udsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(u_shared_experts[idx]))) for (idx, layer) in enumerate(self.umlps2)], dim=-1) # [?*16*3]
+#        u_gate = torch.stack([layer(user_embedding) for layer in self.ugate], dim=-1) # [?*3*2]
+#        weighted_u_expert = torch.einsum("abc,acd->abd", (u_experts, u_gate))[:,:,domain_idc] # [?*16]
+#        u_gate_adi_1 = user_embedding + self.domain_embs(torch.LongTensor([domain_idc]*weighted_u_expert.shape[0]).to(self.config['device'])) # [?*2]
+#        u_gate_adi = torch.sigmoid(self.ugate_adi(u_gate_adi_1)) # [?*2]
+#        u_adi_spec = u_expert*u_gate_adi[:,1:2].expand(-1, u_expert.shape[1])
+#        u_adi_share = weighted_u_expert*u_gate_adi[:,0:1].expand(-1, weighted_u_expert.shape[1])
+#        u_adi = u_adi_spec + u_adi_share # [?*48]
+#        u = self.umlp3[domain_idc](u_adi)
+#        u = self.umlp4[domain_idc](u)
+#
+#        i_expert = self.imlp2[domain_idc](self.imlp1[domain_idc](item_embedding))
+#        i_shared_experts = [self.relu(self.idsbn1[domain_idc*self.config['num_shared_experts']+idx](layer(item_embedding))) for (idx, layer) in enumerate(self.imlps1)]
+#        i_experts = torch.stack([self.relu(self.idsbn2[domain_idc*self.config['num_shared_experts']+idx](layer(i_shared_experts[idx]))) for (idx, layer) in enumerate(self.imlps2)], dim=-1) # [?*16*3]
+#        i_gate = torch.stack([layer(item_embedding) for layer in self.igate], dim=-1) # [?*3*2]
+#        weighted_i_expert = torch.einsum("abc,acd->abd", (i_experts, i_gate))[:,:,domain_idc] # [?*16]
+#        i_gate_adi_1 = item_embedding + self.domain_embs(torch.LongTensor([domain_idc+self.config['num_tasks']]*weighted_i_expert.shape[0]).to(self.config['device'])) # [?*2]
+#        i_gate_adi = torch.sigmoid(self.igate_adi(i_gate_adi_1)) # [?*2]
+#        i_adi_spec = i_expert*i_gate_adi[:,1:2].expand(-1, i_expert.shape[1])
+#        i_adi_share = weighted_i_expert*i_gate_adi[:,0:1].expand(-1, weighted_i_expert.shape[1])
+#        i_adi = i_adi_spec + i_adi_share # [?*48]
+#        i = self.imlp3[domain_idc](i_adi)
+#        i = self.imlp4[domain_idc](i)
+#
+#        logits = torch.sum(torch.mul(u, i), dim=1)
+#        if self.training:
+#            logits = logits.view(-1, self.num_class)
+#            return self.softmax(logits).view(-1, 1)
+#        else:
+#            return logits.view(-1, 1)
