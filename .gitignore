@@ -1,4 +1,4 @@
-*.sh
+# *.sh
 *.out
 # checkpoints/**
 **/.ipynb_checkpoints/**
